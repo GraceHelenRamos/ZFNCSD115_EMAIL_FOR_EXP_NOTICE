@@ -1,0 +1,32 @@
+*&---------------------------------------------------------------------*
+*& Report ZPRGSD115_EMAIL_FOR_EXP_NOTICE
+*&---------------------------------------------------------------------*
+*&
+*&---------------------------------------------------------------------*
+REPORT zprgsd115_email_for_exp_notice.
+
+SELECTION-SCREEN BEGIN OF BLOCK b1 WITH FRAME TITLE TEXT-t01.
+  PARAMETERS: p_date TYPE sy-datum.
+SELECTION-SCREEN END OF BLOCK b1.
+
+PERFORM f_process_email.
+*&---------------------------------------------------------------------*
+*& Form f_process_email
+*&---------------------------------------------------------------------*
+FORM f_process_email .
+
+  DATA: vl_dats TYPE draw-vrldat.
+
+  CLEAR vl_dats.
+
+  IF p_date IS INITIAL.
+    vl_dats = sy-datum + 60.
+  ELSE.
+    vl_dats = p_date + 60.
+  ENDIF.
+
+
+  CALL FUNCTION 'ZFNCSD115_EMAIL_FOR_EXP_NOTICE'
+    EXPORTING
+      p_vrldat = vl_dats.
+ENDFORM.
