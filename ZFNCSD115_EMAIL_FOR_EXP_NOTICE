@@ -1,0 +1,36 @@
+FUNCTION zfncsd115_email_for_exp_notice.
+*"----------------------------------------------------------------------
+*"*"Interface local:
+*"  IMPORTING
+*"     REFERENCE(P_VRLDAT) TYPE  DRAW-VRLDAT OPTIONAL
+*"  EXPORTING
+*"     REFERENCE(E_RETURN) TYPE  BAPIRET2
+*"----------------------------------------------------------------------
+
+  DATA: it_draw         TYPE y_t_draw,
+        it_env_register TYPE y_t_env_register.
+
+  PERFORM f_read_draw_by_vrldat USING p_vrldat
+                             CHANGING it_draw.
+  IF it_draw IS INITIAL.
+    MESSAGE e000(oo) WITH TEXT-t01 INTO e_return-message.
+    e_return-id     = sy-msgid.
+    e_return-number = sy-msgno.
+    e_return-type   = sy-msgty.
+    RETURN.
+  ENDIF.
+
+  PERFORM f_get_register_for_email USING it_draw
+                                CHANGING it_env_register.
+  IF it_env_register IS INITIAL.
+    MESSAGE e000(oo) WITH TEXT-t02 INTO e_return-message.
+    e_return-id     = sy-msgid.
+    e_return-number = sy-msgno.
+    e_return-type   = sy-msgty.
+    RETURN.
+  ENDIF.
+
+  PERFORM f_process_email USING it_draw
+                                it_env_register
+                       CHANGING e_return.
+ENDFUNCTION.
