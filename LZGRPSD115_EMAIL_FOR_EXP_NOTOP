@@ -1,0 +1,44 @@
+FUNCTION-POOL zgrpsd115_email_for_exp_no.   "MESSAGE-ID ..
+
+* INCLUDE LZGRPSD115_EMAIL_FOR_EXP_NOD...    " Local class definition
+TYPES:BEGIN OF str_draw,
+        doknr  TYPE draw-doknr,
+        dokar  TYPE draw-dokar,
+        dokst  TYPE draw-dokst,
+        vrldat TYPE draw-vrldat,
+      END OF str_draw,
+
+      BEGIN OF str_constants,
+        cprog TYPE ztblgl_constante-cprog,
+        chave TYPE ztblgl_constante-chave,
+        valor TYPE ztblgl_constante-valor,
+      END OF str_constants,
+
+      y_t_draw         TYPE STANDARD TABLE OF str_draw,
+      y_t_env_register TYPE STANDARD TABLE OF ztblsd115_em_reg.
+
+CONSTANTS: BEGIN OF c_email_txt_name,
+             pt TYPE thead-tdname VALUE 'ZSD115_AGENT_CONTRACT_EMAIL_PT',
+             en TYPE thead-tdname VALUE 'ZSD115_AGENT_CONTRACT_EMAIL_EN',
+           END OF c_email_txt_name,
+
+           c_name_program TYPE thead-tdname VALUE 'ZFNCSD115_EMAIL_FOR_EXP_NOTICE',
+           c_dokar        TYPE thead-tdname VALUE 'DOKAR',
+           c_dokst        TYPE thead-tdname VALUE 'DOKST',
+
+           BEGIN OF c_text_id,
+             standard_txt TYPE thead-tdid VALUE 'ST',
+           END OF c_text_id,
+
+           BEGIN OF c_language,
+             pt TYPE thead-tdid VALUE 'P',
+           END OF c_language,
+
+           BEGIN OF c_rec_type,
+             email_address TYPE somlreci1-rec_type VALUE 'U',
+           END OF c_rec_type,
+
+           BEGIN OF c_taype_message,
+             s TYPE thead-tdname VALUE 'S',
+             e TYPE thead-tdname VALUE 'E',
+           END OF c_taype_message.
