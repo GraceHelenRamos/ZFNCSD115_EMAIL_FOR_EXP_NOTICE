@@ -1,0 +1,312 @@
+*----------------------------------------------------------------------*
+***INCLUDE LZGRPSD115_EMAIL_FOR_EXP_NOF01.
+*----------------------------------------------------------------------*
+*&---------------------------------------------------------------------*
+*& Form f_read_draw_by_vrldat
+*&---------------------------------------------------------------------*
+FORM f_read_draw_by_vrldat USING p_vrldat TYPE draw-vrldat
+                        CHANGING pt_draw  TYPE  y_t_draw.
+
+  DATA: wa_dokst TYPE str_constants,
+        wa_dokar TYPE str_constants.
+
+  CLEAR: pt_draw, wa_dokst, wa_dokar.
+
+  SELECT SINGLE cprog chave valor
+    FROM ztblgl_constante
+    INTO wa_dokst
+    WHERE cprog EQ c_name_program
+      AND chave EQ c_dokst.
+
+  SELECT SINGLE cprog chave valor
+    FROM ztblgl_constante
+    INTO wa_dokar
+    WHERE cprog EQ c_name_program
+      AND chave EQ c_dokar.
+
+  SELECT doknr dokar dokst vrldat
+    FROM draw
+    INTO TABLE pt_draw
+    WHERE vrldat  BETWEEN sy-datum AND p_vrldat
+      AND dokar EQ wa_dokar-valor
+      AND dokst EQ wa_dokst-valor .
+
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form f_process_email
+*&---------------------------------------------------------------------*
+FORM f_process_email USING pt_draw         TYPE y_t_draw
+                           pt_env_register TYPE  y_t_env_register
+                  CHANGING pw_return       TYPE bapiret2.
+
+  DATA: vl_dif_bet_dates TYPE i,
+        it_text_lines    TYPE srm_t_solisti1,
+        wa_document_data TYPE sodocchgi1,
+        it_receivers     TYPE somlreci1_t,
+        it_packing_list  TYPE sopcklsti1_t,
+        it_send_log      TYPE STANDARD TABLE OF ztblsd115_sndlog,
+        wa_send_log      LIKE LINE OF it_send_log,
+        wa_return        TYPE bapiret2.
+
+  CLEAR:it_send_log.
+
+  LOOP AT pt_draw ASSIGNING FIELD-SYMBOL(<fs_draw>).
+    CLEAR:  vl_dif_bet_dates, wa_send_log.
+
+    vl_dif_bet_dates = <fs_draw>-vrldat - sy-datum.
+
+    IF vl_dif_bet_dates MOD 15 = 0 AND vl_dif_bet_dates <= 60.
+
+      IF sy-datum <= <fs_draw>-vrldat.
+
+        LOOP AT  pt_env_register ASSIGNING FIELD-SYMBOL(<fs_env_register>) WHERE dokar = <fs_draw>-dokar.
+
+          CASE <fs_env_register>-spras.
+            WHEN c_language-pt.
+              PERFORM f_get_document_data_pt CHANGING wa_document_data.
+
+              PERFORM f_get_email_text_content USING c_email_txt_name-pt
+                                                     <fs_env_register>-spras
+                                                     <fs_draw>
+                                                     vl_dif_bet_dates
+                                            CHANGING it_text_lines
+                                                     wa_return.
+            WHEN OTHERS.
+
+              PERFORM f_get_document_data_en CHANGING wa_document_data.
+
+              PERFORM f_get_email_text_content USING  c_email_txt_name-en
+                                                      <fs_env_register>-spras
+                                                      <fs_draw>
+                                                      vl_dif_bet_dates
+                                            CHANGING  it_text_lines
+                                                      wa_return.
+
+          ENDCASE.
+
+          PERFORM f_get_packing_list USING  it_text_lines
+                                   CHANGING it_packing_list.
+
+          PERFORM f_get_receivers_email_tab USING <fs_env_register>
+                                         CHANGING it_receivers
+                                                  wa_send_log-email.
+
+          CALL FUNCTION 'SO_NEW_DOCUMENT_ATT_SEND_API1'
+            EXPORTING
+              document_data              = wa_document_data
+              put_in_outbox              = abap_true
+              commit_work                = abap_true
+            TABLES
+              packing_list               = it_packing_list
+              contents_txt               = it_text_lines
+              receivers                  = it_receivers
+            EXCEPTIONS
+              too_many_receivers         = 1
+              document_not_sent          = 2
+              document_type_not_exist    = 3
+              operation_no_authorization = 4
+              parameter_error            = 5
+              x_error                    = 6
+              enqueue_error              = 7
+              OTHERS                     = 8.
+          IF sy-subrc IS NOT INITIAL.
+            MESSAGE ID sy-msgid TYPE sy-msgty NUMBER sy-msgno
+                    WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4 INTO wa_return-message.
+            wa_return-id     = sy-msgid.
+            wa_return-number = sy-msgno.
+            wa_return-type   = sy-msgty.
+
+            PERFORM f_get_next_number CHANGING wa_send_log-log_id.
+            wa_send_log-doknr        = <fs_draw>-doknr.
+            wa_send_log-date_send    = sy-datum.
+            wa_send_log-time_send    = sy-uzeit.
+            wa_send_log-vrldat       = <fs_draw>-vrldat.
+            wa_send_log-expiry_days  = vl_dif_bet_dates.
+            wa_send_log-status_control  = c_taype_message-e.
+            wa_send_log-status       = icon_led_red.
+            wa_send_log-msg = wa_return-message.
+
+          ELSE.
+            PERFORM f_get_next_number CHANGING wa_send_log-log_id.
+
+            wa_send_log-doknr        = <fs_draw>-doknr.
+            wa_send_log-date_send    = sy-datum.
+            wa_send_log-time_send    = sy-uzeit.
+            wa_send_log-vrldat       = <fs_draw>-vrldat.
+            wa_send_log-expiry_days  = vl_dif_bet_dates.
+            wa_send_log-status_control  = c_taype_message-s.
+            wa_send_log-status       = icon_led_green.
+            wa_send_log-msg          = TEXT-t05.
+
+          ENDIF.
+          APPEND wa_send_log TO it_send_log.
+
+        ENDLOOP.
+      ENDIF.
+    ENDIF.
+  ENDLOOP.
+
+  MODIFY ztblsd115_sndlog FROM  TABLE it_send_log.
+
+  IF it_send_log IS INITIAL.
+    MESSAGE e000(oo) WITH TEXT-t06 INTO pw_return-message.
+    pw_return-id     = sy-msgid.
+    pw_return-number = sy-msgno.
+    pw_return-type   = sy-msgty.
+  ELSE.
+    MESSAGE s000(oo) WITH TEXT-t05 INTO pw_return-message.
+    pw_return-id     = sy-msgid.
+    pw_return-number = sy-msgno.
+    pw_return-type   = sy-msgty.
+  ENDIF.
+
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form f_get_email_text_content
+*&---------------------------------------------------------------------*
+FORM f_get_email_text_content USING p_name           TYPE thead-tdname
+                                    p_langu          TYPE ztblsd115_em_reg-spras
+                                    pw_draw          TYPE str_draw
+                                    p_dif_bet_dates  TYPE i
+                           CHANGING pt_text_lines    TYPE srm_t_solisti1
+                                    pw_return        TYPE bapiret2.
+
+  DATA: it_lines        TYPE tline_t,
+        vl_dif_bet_dates TYPE char3,
+        vl_vrldat        TYPE string.
+
+  CLEAR: vl_dif_bet_dates .
+
+  vl_dif_bet_dates = p_dif_bet_dates.
+
+  CALL FUNCTION 'READ_TEXT'
+    EXPORTING
+      id                      = c_text_id-standard_txt
+      language                = p_langu
+      name                    = p_name
+      object                  = 'TEXT'
+    TABLES
+      lines                   = it_lines
+    EXCEPTIONS
+      id                      = 1
+      language                = 2
+      name                    = 3
+      not_found               = 4
+      object                  = 5
+      reference_check         = 6
+      wrong_access_to_archive = 7
+      OTHERS                  = 8.
+  IF sy-subrc IS NOT INITIAL.
+    MESSAGE ID sy-msgid TYPE sy-msgty NUMBER sy-msgno
+                WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4 INTO pw_return-message.
+    pw_return-id     = sy-msgid.
+    pw_return-number = sy-msgno.
+    pw_return-type   = sy-msgty.
+    RETURN.
+  ENDIF.
+
+  LOOP AT it_lines ASSIGNING FIELD-SYMBOL(<fs_lines>).
+
+    REPLACE ALL OCCURRENCES OF '&DAYS&  ' IN <fs_lines> WITH vl_dif_bet_dates.
+    REPLACE ALL OCCURRENCES OF '&DOKNR& ' IN <fs_lines> WITH |{  pw_draw-doknr ALPHA = OUT }|.
+
+
+    CALL FUNCTION 'CONVERT_DATE_TO_EXTERNAL'
+      EXPORTING
+        date_internal = pw_draw-vrldat
+      IMPORTING
+        date_external = vl_vrldat.
+
+    REPLACE ALL OCCURRENCES OF '&VRLDAT&' IN <fs_lines> WITH vl_vrldat.
+
+  ENDLOOP.
+
+  pt_text_lines = VALUE srm_t_solisti1( FOR lines IN it_lines  ( line = lines-tdline ) ).
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form f_get_register_for_email
+*&---------------------------------------------------------------------*
+FORM f_get_register_for_email USING pt_draw         TYPE  y_t_draw
+                           CHANGING pt_env_register TYPE  y_t_env_register.
+
+  CLEAR:pt_env_register.
+  IF pt_draw IS INITIAL. RETURN. ENDIF.
+
+  SELECT *
+    FROM ztblsd115_em_reg
+    INTO TABLE pt_env_register
+    FOR ALL ENTRIES IN pt_draw
+    WHERE dokar EQ pt_draw-dokar.
+
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form f_get_document_data_pt
+*&---------------------------------------------------------------------*
+FORM f_get_document_data_pt CHANGING pw_document_data  TYPE sodocchgi1.
+  CLEAR:pw_document_data.
+  pw_document_data-obj_name  =  TEXT-t03.
+  pw_document_data-obj_descr =  TEXT-t04.
+  pw_document_data-obj_langu = sy-langu.
+  pw_document_data-doc_size  = 200.
+
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form f_get_document_data_en
+*&---------------------------------------------------------------------*
+FORM f_get_document_data_en CHANGING pw_document_data  TYPE sodocchgi1.
+  CLEAR:pw_document_data.
+  pw_document_data-obj_name  =  TEXT-t07.
+  pw_document_data-obj_descr =  TEXT-t08.
+  pw_document_data-obj_langu = sy-langu.
+  pw_document_data-doc_size  = 200.
+
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form f_get_receivers_email_tab
+*&---------------------------------------------------------------------*
+FORM f_get_receivers_email_tab USING pw_env_register   TYPE ztblsd115_em_reg
+                            CHANGING pt_receivers      TYPE somlreci1_t
+                                     pw_send_log_email TYPE ztblsd115_sndlog-email.
+
+  DATA wa_receivers LIKE LINE OF pt_receivers.
+
+  CLEAR: wa_receivers, pt_receivers.
+  wa_receivers-rec_type   = c_rec_type-email_address.
+  wa_receivers-receiver   = pw_env_register-area_email.
+  wa_receivers-notif_del  = abap_false.
+  wa_receivers-notif_ndel = abap_false.
+  APPEND wa_receivers TO pt_receivers.
+
+  pw_send_log_email = pw_env_register-area_email.
+
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form f_get_packing_list
+*&---------------------------------------------------------------------*
+FORM f_get_packing_list USING pt_content_txt    TYPE srm_t_solisti1
+                     CHANGING pt_packing_list   TYPE sopcklsti1_t.
+
+  DATA wa_packing_list LIKE LINE OF pt_packing_list.
+  CLEAR:wa_packing_list ,pt_packing_list.
+
+  wa_packing_list-head_start = 1.
+  wa_packing_list-head_num   = 0.
+  wa_packing_list-body_start = 1.
+  wa_packing_list-body_num   = lines( pt_content_txt ).
+  wa_packing_list-doc_type   = 'RAW'.
+  APPEND wa_packing_list TO pt_packing_list.
+
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form f_get_next_number
+*&---------------------------------------------------------------------*
+FORM f_get_next_number  CHANGING pw_send_log_id TYPE ztblsd115_sndlog-log_id.
+
+  CALL FUNCTION 'NUMBER_GET_NEXT'
+    EXPORTING
+      nr_range_nr = '01'
+      object      = 'ZSD115_LOG'
+    IMPORTING
+      number      = pw_send_log_id.
+
+ENDFORM.
