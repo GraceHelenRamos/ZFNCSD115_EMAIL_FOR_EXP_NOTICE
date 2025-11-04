@@ -7,7 +7,9 @@ Imagens do relatório de log
 
 
 <img width="846" height="211" alt="image" src="https://github.com/user-attachments/assets/964b2c5b-b8d3-44db-9a20-68f40f2fc85a" />
+
 Relatório executado com todos os logs
+
 
 <img width="797" height="178" alt="image" src="https://github.com/user-attachments/assets/39eb082b-11ee-494a-85cc-f904a9073ec9" />
 
